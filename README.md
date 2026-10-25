@@ -228,19 +228,4 @@ Execute the automated test suite with `npm test`:
    - Query: `CALL sp_add_roast(5, '2026-03-21', 'Light', 50.00, 42.00);` (with writes enabled).
    - Expected Result: HTTP 400 with raw MySQL error: `ERROR 1644 (45000): Roast exceeds remaining green coffee stock for this lot`.
 
----
-
-## 8. Git & GitHub Setup
-
-To connect this local repository to your remote GitHub repository:
-
-```bash
-# Add your GitHub remote repository
-git remote add origin https://github.com/YOUR_USERNAME/specialty-coffee-tracker.git
-
-# Verify branch is main
-git branch -M main
-
-# Push to GitHub (do not run until you are ready)
-git push -u origin main
 ```
