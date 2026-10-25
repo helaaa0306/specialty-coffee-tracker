@@ -1,0 +1,27 @@
+{
+  "name": "specialty-coffee-tracker",
+  "version": "1.0.0",
+  "description": "Specialty Coffee Cupping & Bean Tracker - DBMS Course Project",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "db:setup": "node scripts/db-setup.js",
+    "test": "node scripts/test-api.js"
+  },
+  "keywords": [
+    "coffee",
+    "cupping",
+    "dbms",
+    "mysql",
+    "express"
+  ],
+  "author": "helaaa0306",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mysql2": "^3.12.0"
+  }
+}
