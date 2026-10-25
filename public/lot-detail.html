@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lot Traceability & Report | Specialty Coffee Tracker</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Sticky Top Navigation -->
+  <nav class="top-nav" aria-label="Main Navigation">
+    <div class="nav-container">
+      <a href="index.html" class="brand">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M2,21H20V19H2M20,8H18V5H20M20,3H4V13A4,4 0 0,0 8,17H14A4,4 0 0,0 18,13V10H20A2,2 0 0,0 22,8V5C22,3.89 21.1,3 20,3Z"/>
+        </svg>
+        <span>CoffeeTracker</span>
+      </a>
+      <button class="nav-toggle" aria-label="Toggle navigation">☰</button>
+      <ul class="nav-links">
+        <li><a href="index.html" class="nav-link">Dashboard</a></li>
+        <li><a href="lots.html" class="nav-link">Lots</a></li>
+        <li><a href="roasts.html" class="nav-link">Roast Log</a></li>
+        <li><a href="cupping.html" class="nav-link">Cupping</a></li>
+        <li><a href="leaderboard.html" class="nav-link">Leaderboard</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <a href="lots.html" class="btn btn-sm btn-secondary" style="margin-bottom: 0.5rem; display: inline-flex;">
+          &larr; Back to Lots
+        </a>
+        <h1 class="page-title" id="lot-header-title">Coffee Lot Traceability Report</h1>
+        <p class="page-subtitle">One-stop lot report via stored procedure <code>sp_lot_report</code> and full score traceability view <code>v_score_traceability</code>.</p>
+      </div>
+    </div>
+
+    <div id="alert-container" class="alert-container"></div>
+
+    <div id="lot-content" style="display: none;">
+
+      <!-- Lot Summary Card (from sp_lot_report) -->
+      <div class="card" style="border-top: 5px solid var(--color-caramel);">
+        <div class="card-header">
+          <div>
+            <span class="badge badge-process" id="lot-process-badge" style="font-size: 0.9rem; margin-bottom: 0.5rem;">Process</span>
+            <h2 class="card-title" id="lot-code-display" style="font-size: 2rem; margin-bottom: 0.25rem;">LOT CODE</h2>
+            <div id="lot-origin-display" style="color: var(--color-text-secondary); font-size: 1.05rem;">Farm Name, Country</div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 0.85rem; color: var(--color-text-muted); text-transform: uppercase;">Average Cupping Score</div>
+            <div id="lot-avg-score-display" style="font-size: 2.5rem; font-weight: 800; color: var(--color-caramel); line-height: 1;">—</div>
+            <div id="lot-stock-badge-display" style="margin-top: 0.5rem;"></div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--color-border);">
+          <div>
+            <div style="font-size: 0.8rem; color: var(--color-text-muted); text-transform: uppercase;">Botanical Variety</div>
+            <strong id="lot-variety-display" style="font-size: 1.1rem; color: var(--color-espresso);">—</strong>
+          </div>
+          <div>
+            <div style="font-size: 0.8rem; color: var(--color-text-muted); text-transform: uppercase;">Purchased Quantity</div>
+            <strong id="lot-purchased-display" style="font-size: 1.1rem; color: var(--color-espresso);">—</strong>
+          </div>
+          <div>
+            <div style="font-size: 0.8rem; color: var(--color-text-muted); text-transform: uppercase;">Remaining Stock</div>
+            <strong id="lot-stock-display" style="font-size: 1.1rem; color: var(--color-espresso);">—</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Roasting History for this Lot -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title" style="margin-bottom:0;">Roasting History for this Lot</h2>
+          <span class="badge badge-process" id="lot-roasts-count">0 Roasts</span>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Roast ID</th>
+                <th>Roast Date</th>
+                <th>Roast Level Profile</th>
+                <th>Green Input (kg)</th>
+                <th>Roasted Yield (kg)</th>
+                <th>Weight-Loss %</th>
+              </tr>
+            </thead>
+            <tbody id="lot-roasts-tbody">
+              <tr><td colspan="6" style="text-align: center;">Loading roasts...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Sensory Score Sheets Traceability (v_score_traceability) -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title" style="margin-bottom:0;">
+            Cup Traceability & Sensory Evaluations (<code>v_score_traceability</code>)
+          </h2>
+          <span class="badge badge-score" id="lot-scores-count">0 Scores</span>
+        </div>
+        <p style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
+          Trace each cupper's evaluation through the cupping session, sample blind code, and roast batch directly back to this green lot.
+        </p>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Score ID</th>
+                <th>Cupper Name</th>
+                <th>Session Date</th>
+                <th>Blind Code</th>
+                <th>Roast Date</th>
+                <th>Roast Profile</th>
+                <th>Total Cupping Score</th>
+              </tr>
+            </thead>
+            <tbody id="lot-scores-tbody">
+              <tr><td colspan="7" style="text-align: center;">Loading score sheets...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>Specialty Coffee Cupping & Bean Tracker &bull; DBMS Project</p>
+  </footer>
+
+  <script src="js/app.js"></script>
+  <script>
+    async function loadLotReport() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const lotId = urlParams.get('id');
+
+      if (!lotId) {
+        showAlert('No lot ID specified in URL. Please choose a lot from the Lots page.', 'danger');
+        return;
+      }
+
+      try {
+        const data = await apiRequest(`/api/lots/${lotId}`);
+        const { report, roasts, scores } = data;
+
+        document.getElementById('lot-content').style.display = 'block';
+        document.getElementById('lot-header-title').textContent = `Lot Report: ${report.lot_code}`;
+
+        // Header / Stored Procedure details
+        document.getElementById('lot-code-display').textContent = report.lot_code;
+        document.getElementById('lot-process-badge').textContent = report.process;
+        document.getElementById('lot-origin-display').textContent = `${report.farm_name}, ${report.country}`;
+        document.getElementById('lot-variety-display').textContent = report.variety || '—';
+        document.getElementById('lot-purchased-display').textContent = formatKg(report.quantity_kg);
+        document.getElementById('lot-stock-display').textContent = formatKg(report.stock_remaining_kg);
+        document.getElementById('lot-avg-score-display').textContent = report.avg_score ? parseFloat(report.avg_score).toFixed(2) : '—';
+
+        const isLow = parseFloat(report.stock_remaining_kg) < 10;
+        document.getElementById('lot-stock-badge-display').innerHTML = isLow
+          ? '<span class="badge badge-low">LOW STOCK (&lt; 10 kg)</span>'
+          : '<span class="badge badge-ok">STOCK OK</span>';
+
+        // Roasts table
+        document.getElementById('lot-roasts-count').textContent = `${roasts.length} Roasts`;
+        const roastsTbody = document.getElementById('lot-roasts-tbody');
+        if (!roasts.length) {
+          roastsTbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No roasts logged for this lot yet.</td></tr>';
+        } else {
+          roastsTbody.innerHTML = roasts.map(r => `
+            <tr>
+              <td>#${r.roast_id}</td>
+              <td>${escapeHtml(r.roast_date)}</td>
+              <td><span class="badge badge-process">${escapeHtml(r.roast_level)}</span></td>
+              <td>${formatKg(r.green_kg)}</td>
+              <td>${formatKg(r.roasted_kg)}</td>
+              <td><strong>${r.weight_loss_pct !== null ? parseFloat(r.weight_loss_pct).toFixed(2) + ' %' : '—'}</strong></td>
+            </tr>
+          `).join('');
+        }
+
+        // Scores table from v_score_traceability
+        document.getElementById('lot-scores-count').textContent = `${scores.length} Sheets`;
+        const scoresTbody = document.getElementById('lot-scores-tbody');
+        if (!scores.length) {
+          scoresTbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">No cupping score sheets recorded for this lot yet.</td></tr>';
+        } else {
+          scoresTbody.innerHTML = scores.map(s => `
+            <tr>
+              <td>#${s.score_id}</td>
+              <td><strong>${escapeHtml(s.cupper_name)}</strong></td>
+              <td>${escapeHtml(s.session_date)}</td>
+              <td><span class="badge badge-score">${escapeHtml(s.blind_code)}</span></td>
+              <td>${escapeHtml(s.roast_date || '—')}</td>
+              <td><span class="badge badge-process">${escapeHtml(s.roast_level || '—')}</span></td>
+              <td><strong style="color: var(--color-caramel); font-size: 1.05rem;">${formatScore(s.total_score)}</strong></td>
+            </tr>
+          `).join('');
+        }
+
+      } catch (err) {
+        showAlert(err.message, 'danger');
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadLotReport);
+  </script>
+</body>
+</html>

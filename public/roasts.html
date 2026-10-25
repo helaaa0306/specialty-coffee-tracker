@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Roast Log & Production | Specialty Coffee Tracker</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Sticky Top Navigation -->
+  <nav class="top-nav" aria-label="Main Navigation">
+    <div class="nav-container">
+      <a href="index.html" class="brand">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M2,21H20V19H2M20,8H18V5H20M20,3H4V13A4,4 0 0,0 8,17H14A4,4 0 0,0 18,13V10H20A2,2 0 0,0 22,8V5C22,3.89 21.1,3 20,3Z"/>
+        </svg>
+        <span>CoffeeTracker</span>
+      </a>
+      <button class="nav-toggle" aria-label="Toggle navigation">☰</button>
+      <ul class="nav-links">
+        <li><a href="index.html" class="nav-link">Dashboard</a></li>
+        <li><a href="lots.html" class="nav-link">Lots</a></li>
+        <li><a href="roasts.html" class="nav-link active">Roast Log</a></li>
+        <li><a href="cupping.html" class="nav-link">Cupping</a></li>
+        <li><a href="leaderboard.html" class="nav-link">Leaderboard</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Roast Log & Batch Execution</h1>
+        <p class="page-subtitle">Record roasting batches via stored procedure <code>sp_add_roast</code> with row-level locking and stock validation trigger <code>trg_roast_stock_check</code>.</p>
+      </div>
+    </div>
+
+    <div id="alert-container" class="alert-container"></div>
+
+    <!-- Record Roast Form -->
+    <div class="card">
+      <h2 class="card-title">Record New Roast Batch</h2>
+      <form id="roast-form" onsubmit="handleRecordRoast(event)">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="roast_lot_id">Green Coffee Lot *</label>
+            <select id="roast_lot_id" name="lot_id" required onchange="handleLotSelection(this.value)">
+              <option value="">-- Select Green Lot --</option>
+            </select>
+            <div id="lot-stock-indicator" class="form-help" style="font-weight: 600; color: var(--color-caramel);">
+              Select a lot to check current available stock.
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="roast_date">Roast Date *</label>
+            <input type="date" id="roast_date" name="roast_date" required>
+          </div>
+
+          <div class="form-group">
+            <label for="roast_level">Roast Level Profile *</label>
+            <select id="roast_level" name="roast_level" required>
+              <option value="Light">Light</option>
+              <option value="Medium-Light">Medium-Light</option>
+              <option value="Medium" selected>Medium</option>
+              <option value="Dark">Dark</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="green_kg">Green Coffee Input (kg) *</label>
+            <input type="number" step="0.01" id="green_kg" name="green_kg" required min="0.01" placeholder="e.g. 10.00" oninput="calculateWeightLoss()">
+          </div>
+
+          <div class="form-group">
+            <label for="roasted_kg">Roasted Coffee Yield (kg) *</label>
+            <input type="number" step="0.01" id="roasted_kg" name="roasted_kg" required min="0.01" placeholder="e.g. 8.50" oninput="calculateWeightLoss()">
+          </div>
+
+          <div class="form-group">
+            <label>Calculated Weight-Loss (%)</label>
+            <input type="text" id="live-weight-loss" readonly value="—" style="font-weight: 700; color: var(--color-espresso);">
+            <div class="form-help">Live preview: (Green - Roasted) / Green &times; 100</div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="reset" class="btn btn-secondary" onclick="resetRoastForm()">Reset</button>
+          <button type="submit" class="btn btn-primary" id="submit-roast-btn">Submit Roast (CALL sp_add_roast)</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Roast Log Table -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title" style="margin-bottom:0;">Roast History Log</h2>
+        <span id="roasts-count" class="badge badge-process">0 Roasts</span>
+      </div>
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Date</th>
+              <th>Lot Code</th>
+              <th>Farm</th>
+              <th>Profile Level</th>
+              <th>Green (kg)</th>
+              <th>Roasted (kg)</th>
+              <th>Weight-Loss %</th>
+            </tr>
+          </thead>
+          <tbody id="roasts-tbody">
+            <tr><td colspan="8" style="text-align: center; padding: 2rem;">Loading roast history...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>Specialty Coffee Cupping & Bean Tracker &bull; DBMS Project</p>
+  </footer>
+
+  <script src="js/app.js"></script>
+  <script>
+    let lotsData = [];
+
+    async function loadLotsDropdown() {
+      try {
+        lotsData = await apiRequest('/api/lots');
+        const select = document.getElementById('roast_lot_id');
+        select.innerHTML = '<option value="">-- Select Green Lot --</option>' +
+          lotsData.map(l => `
+            <option value="${l.lot_id}" data-stock="${l.stock_remaining_kg}">
+              ${escapeHtml(l.lot_code)} (${escapeHtml(l.farm_name)} - ${escapeHtml(l.process)}) [${formatKg(l.stock_remaining_kg)} left]
+            </option>
+          `).join('');
+      } catch (err) {
+        console.error('Error loading lots dropdown:', err);
+      }
+    }
+
+    function handleLotSelection(lotId) {
+      const indicator = document.getElementById('lot-stock-indicator');
+      if (!lotId) {
+        indicator.textContent = 'Select a lot to check current available stock.';
+        indicator.style.color = 'var(--color-caramel)';
+        return;
+      }
+      const selected = lotsData.find(l => String(l.lot_id) === String(lotId));
+      if (selected) {
+        const remaining = parseFloat(selected.stock_remaining_kg);
+        const isLow = selected.stock_status === 'LOW';
+        indicator.innerHTML = `Remaining Green Stock: <strong>${formatKg(remaining)}</strong> ${isLow ? '<span class="badge badge-low">LOW STOCK</span>' : '<span class="badge badge-ok">OK</span>'}`;
+        indicator.style.color = isLow ? 'var(--color-danger)' : 'var(--color-espresso)';
+      }
+    }
+
+    function calculateWeightLoss() {
+      const green = parseFloat(document.getElementById('green_kg').value);
+      const roasted = parseFloat(document.getElementById('roasted_kg').value);
+      const display = document.getElementById('live-weight-loss');
+
+      if (!isNaN(green) && !isNaN(roasted) && green > 0) {
+        const loss = ((green - roasted) / green) * 100;
+        display.value = loss.toFixed(2) + ' %';
+        if (loss < 0) {
+          display.style.color = 'var(--color-danger)';
+        } else {
+          display.style.color = 'var(--color-espresso)';
+        }
+      } else {
+        display.value = '—';
+      }
+    }
+
+    function resetRoastForm() {
+      document.getElementById('lot-stock-indicator').textContent = 'Select a lot to check current available stock.';
+      document.getElementById('lot-stock-indicator').style.color = 'var(--color-caramel)';
+      document.getElementById('live-weight-loss').value = '—';
+    }
+
+    async function loadRoasts() {
+      try {
+        const roasts = await apiRequest('/api/roasts');
+        document.getElementById('roasts-count').textContent = `${roasts.length} Roasts`;
+        const tbody = document.getElementById('roasts-tbody');
+
+        if (!roasts.length) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No roasts logged yet.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = roasts.map(r => `
+          <tr>
+            <td>#${r.roast_id}</td>
+            <td>${escapeHtml(r.roast_date)}</td>
+            <td><strong><a href="lot-detail.html?id=${r.lot_id}" style="color: var(--color-caramel); font-weight: 700;">${escapeHtml(r.lot_code)}</a></strong></td>
+            <td>${escapeHtml(r.farm_name)}</td>
+            <td><span class="badge badge-process">${escapeHtml(r.roast_level)}</span></td>
+            <td>${formatKg(r.green_kg)}</td>
+            <td>${formatKg(r.roasted_kg)}</td>
+            <td><strong>${r.weight_loss_pct !== null ? parseFloat(r.weight_loss_pct).toFixed(2) + ' %' : '—'}</strong></td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        showAlert('Failed to load roast history: ' + err.message, 'danger');
+      }
+    }
+
+    async function handleRecordRoast(e) {
+      e.preventDefault();
+      clearAlert();
+      const form = e.target;
+      const data = {
+        lot_id: form.lot_id.value,
+        roast_date: form.roast_date.value,
+        roast_level: form.roast_level.value,
+        green_kg: form.green_kg.value,
+        roasted_kg: form.roasted_kg.value
+      };
+
+      try {
+        const res = await apiRequest('/api/roasts', {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+
+        showAlert(`Roast #${res.roast_id} recorded successfully! Remaining stock for this lot: ${formatKg(res.stock_left_kg)}.`, 'success');
+        form.reset();
+        resetRoastForm();
+        document.getElementById('roast_date').value = new Date().toISOString().split('T')[0];
+        await loadLotsDropdown();
+        await loadRoasts();
+      } catch (err) {
+        // Display readable database trigger or check error message in page alert
+        showAlert(err.message, 'danger');
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('roast_date').value = new Date().toISOString().split('T')[0];
+      loadLotsDropdown();
+      loadRoasts();
+    });
+  </script>
+</body>
+</html>

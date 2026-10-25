@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cupping Protocol & Scoring | Specialty Coffee Tracker</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Sticky Top Navigation -->
+  <nav class="top-nav" aria-label="Main Navigation">
+    <div class="nav-container">
+      <a href="index.html" class="brand">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M2,21H20V19H2M20,8H18V5H20M20,3H4V13A4,4 0 0,0 8,17H14A4,4 0 0,0 18,13V10H20A2,2 0 0,0 22,8V5C22,3.89 21.1,3 20,3Z"/>
+        </svg>
+        <span>CoffeeTracker</span>
+      </a>
+      <button class="nav-toggle" aria-label="Toggle navigation">☰</button>
+      <ul class="nav-links">
+        <li><a href="index.html" class="nav-link">Dashboard</a></li>
+        <li><a href="lots.html" class="nav-link">Lots</a></li>
+        <li><a href="roasts.html" class="nav-link">Roast Log</a></li>
+        <li><a href="cupping.html" class="nav-link active">Cupping</a></li>
+        <li><a href="leaderboard.html" class="nav-link">Leaderboard</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Cupping Lab & Sensory Evaluation</h1>
+        <p class="page-subtitle">SCA standardized blind evaluation protocol, live score tallying, and stored procedure session ranking (<code>sp_session_summary</code>).</p>
+      </div>
+      <div>
+        <button class="btn btn-primary" onclick="toggleCreateSessionForm()">+ New Cupping Session</button>
+      </div>
+    </div>
+
+    <div id="alert-container" class="alert-container"></div>
+
+    <!-- Create Session Form (Collapsible) -->
+    <div class="card" id="create-session-card" style="display: none;">
+      <h2 class="card-title">Initiate New Cupping Session Table</h2>
+      <form id="create-session-form" onsubmit="handleCreateSession(event)">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="session_date">Session Date *</label>
+            <input type="date" id="session_date" name="session_date" required>
+          </div>
+          <div class="form-group full-width">
+            <label for="session_notes">Session Objective / Tasting Notes</label>
+            <input type="text" id="session_notes" name="notes" placeholder="e.g. Origin comparison: Washed vs Natural profiles">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="toggleCreateSessionForm()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Table Session</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Session Selector -->
+    <div class="card">
+      <div class="form-grid" style="align-items: center;">
+        <div class="form-group" style="grid-column: 1 / -1;">
+          <label for="active-session-select" style="font-size: 1rem;">Select Active Cupping Session:</label>
+          <select id="active-session-select" onchange="loadSessionDetails(this.value)" style="font-size: 1rem; font-weight: 600;">
+            <option value="">-- Choose a Cupping Session Table --</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Session Workspace -->
+    <div id="session-workspace" style="display: none;">
+
+      <!-- Session Meta & Controls Banner -->
+      <div class="card" style="border-left: 5px solid var(--color-caramel);">
+        <div class="card-header" style="margin-bottom: 0.5rem;">
+          <div>
+            <h2 class="card-title" id="session-title" style="margin-bottom: 0.25rem;">Cupping Session</h2>
+            <div id="session-date-display" style="color: var(--color-text-secondary); font-size: 0.95rem;"></div>
+          </div>
+          <div style="display: flex; gap: 0.75rem; align-items: center;">
+            <button id="reveal-btn" class="btn btn-outline" onclick="toggleRevealBlind()">
+              👁 <span id="reveal-text">Reveal Coffee Identities</span>
+            </button>
+            <button class="btn btn-secondary" onclick="toggleAddSampleForm()">+ Add Sample</button>
+          </div>
+        </div>
+        <p id="session-notes-display" style="font-style: italic; color: var(--color-text-muted); margin-top: 0.5rem;"></p>
+      </div>
+
+      <!-- Add Sample Form (Collapsible) -->
+      <div class="card" id="add-sample-card" style="display: none;">
+        <h3 class="card-title">Add Sample to Cupping Table</h3>
+        <form id="add-sample-form" onsubmit="handleAddSample(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="sample_roast_id">Roasted Batch *</label>
+              <select id="sample_roast_id" name="roast_id" required>
+                <option value="">-- Select Roast Batch --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="sample_blind_code">Blind Sample Code * (e.g. A1, A2, B1)</label>
+              <input type="text" id="sample_blind_code" name="blind_code" required maxlength="10" placeholder="e.g. A1">
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="toggleAddSampleForm()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Add Sample to Table</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Score Sheet Entry Form -->
+      <div class="card" id="score-sheet-card">
+        <h3 class="card-title">Enter Cupper Score Sheet (10 Attributes)</h3>
+        <p style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 1.25rem;">
+          Rate each sensory attribute on a scale of 0.00 to 10.00 (in 0.25 increments). Total score is computed live and stored via database generated column.
+        </p>
+
+        <form id="score-form" onsubmit="handleSubmitScore(event)">
+          <div class="form-grid" style="margin-bottom: 1.5rem;">
+            <div class="form-group">
+              <label for="score_sample_id">Cupping Sample *</label>
+              <select id="score_sample_id" name="sample_id" required>
+                <option value="">-- Choose Sample --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="cupper_name">Cupper Name *</label>
+              <input type="text" id="cupper_name" name="cupper_name" required placeholder="e.g. Aarav, Meera, Kabir">
+            </div>
+          </div>
+
+          <!-- 10 SCA Attributes Grid -->
+          <div class="cupping-grid">
+            <div class="cupping-attribute">
+              <label for="attr_fragrance">1. Fragrance / Aroma</label>
+              <input type="number" step="0.25" min="0" max="10" id="attr_fragrance" name="fragrance_aroma" value="7.75" required oninput="updateLiveTotalScore()">
+            </div>
+            <div class="cupping-attribute">
+              <label for="attr_flavor">2. Flavor</label>
+              <input type="number" step="0.25" min="0" max="10" id="attr_flavor" name="flavor" value="7.75" required oninput="updateLiveTotalScore()">
+            </div>
+            <div class="cupping-attribute">
+              <label for="attr_aftertaste">3. Aftertaste</label>
+              <input type="number" step="0.25" min="0" max="10" id="attr_aftertaste" name="aftertaste" value="7.50" required oninput="updateLiveTotalScore()">
+            </div>
+            <div class="cupping-attribute">
+              <label for="attr_acidity">4. Acidity</label>
+              <input type="number" step="0.25" min="0" max="10" id="attr_acidity" name="acidity" value="7.75" required oninput="updateLiveTotalScore()">
+            </div>
+            <div class="cupping-attribute">
+              <label for="attr_body">5. Body</label>
+              <input type="number" step="0.25" min="0" max="10" id="attr_body" name="body" value="7.50" required oninput="updateLiveTotalScore()">
+            </div>
+            <div class="cupping-attribute">
+              <label for="attr_balance">6. Balance</label>
+              <input type="number" step="0.25" min="0" max="10" id="attr_balance" name="balance" value="7.75" required oninput="updateLiveTotalScore()">
+            </div>
+            <div class="cupping-attribute">
+              <label for="attr_uniformity">7. Uniformity</label>
+              <input type="number" step="0.25" min="0" max="10" id="attr_uniformity" name="uniformity" value="10.00" required oninput="updateLiveTotalScore()">
+            </div>
+            <div class="cupping-attribute">
+              <label for="attr_clean_cup">8. Clean Cup</label>
+              <input type="number" step="0.25" min="0" max="10" id="attr_clean_cup" name="clean_cup" value="10.00" required oninput="updateLiveTotalScore()">
+            </div>
+            <div class="cupping-attribute">
+              <label for="attr_sweetness">9. Sweetness</label>
+              <input type="number" step="0.25" min="0" max="10" id="attr_sweetness" name="sweetness" value="10.00" required oninput="updateLiveTotalScore()">
+            </div>
+            <div class="cupping-attribute">
+              <label for="attr_overall">10. Overall</label>
+              <input type="number" step="0.25" min="0" max="10" id="attr_overall" name="overall" value="7.75" required oninput="updateLiveTotalScore()">
+            </div>
+          </div>
+
+          <div class="form-grid" style="margin-top: 1.5rem;">
+            <div class="form-group">
+              <label for="defect_deduction">Defect Deduction (points to subtract)</label>
+              <input type="number" step="0.25" min="0" id="defect_deduction" name="defect_deduction" value="0.00" oninput="updateLiveTotalScore()">
+            </div>
+          </div>
+
+          <!-- Live Score Card -->
+          <div class="score-display-card">
+            <div style="text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.85rem;">Live Calculated Total Score</div>
+            <div class="score-display-number" id="live-total-score">83.75</div>
+            <div class="score-display-hint">Sum of 10 attributes minus defects &bull; Authoritative score calculated by database on submit</div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" style="font-size: 1rem; padding: 0.75rem 1.5rem;">
+              Submit Cupping Score Sheet
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Session Summary Ranking (CALL sp_session_summary) -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title" style="margin-bottom:0;">
+            Session Table Ranking (<code>CALL sp_session_summary</code>)
+          </h3>
+          <span class="badge badge-score" id="summary-samples-count">0 Samples</span>
+        </div>
+        <p style="color: var(--color-text-secondary); font-size: 0.85rem; margin-bottom: 1rem;">
+          Ranked result aggregated directly by MySQL stored procedure <code>sp_session_summary</code>.
+        </p>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Blind Code</th>
+                <th>Lot / Farm</th>
+                <th>Roast Profile</th>
+                <th>Sheets Scored</th>
+                <th>Average Score</th>
+              </tr>
+            </thead>
+            <tbody id="session-summary-tbody">
+              <tr><td colspan="6" style="text-align: center;">No summary available yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Detailed Score Sheets Submitted in this Session -->
+      <div class="card">
+        <h3 class="card-title">Submitted Score Sheets in this Session</h3>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Sample</th>
+                <th>Cupper</th>
+                <th>Fragrance</th>
+                <th>Flavor</th>
+                <th>Aftertaste</th>
+                <th>Acidity</th>
+                <th>Body</th>
+                <th>Balance</th>
+                <th>Uniform</th>
+                <th>Clean</th>
+                <th>Sweet</th>
+                <th>Overall</th>
+                <th>Defects</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody id="session-scores-tbody">
+              <tr><td colspan="14" style="text-align: center;">No score sheets submitted yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>Specialty Coffee Cupping & Bean Tracker &bull; DBMS Project</p>
+  </footer>
+
+  <script src="js/app.js"></script>
+  <script>
+    let activeSessionId = null;
+    let activeSessionData = null;
+    let roastsAvailable = [];
+    let isBlindRevealed = false;
+
+    function toggleCreateSessionForm() {
+      const card = document.getElementById('create-session-card');
+      card.style.display = card.style.display === 'none' ? 'block' : 'none';
+      if (card.style.display === 'block') card.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function toggleAddSampleForm() {
+      const card = document.getElementById('add-sample-card');
+      card.style.display = card.style.display === 'none' ? 'block' : 'none';
+      if (card.style.display === 'block') card.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function toggleRevealBlind() {
+      isBlindRevealed = !isBlindRevealed;
+      const btnText = document.getElementById('reveal-text');
+      btnText.textContent = isBlindRevealed ? 'Hide Coffee Identities (Blind)' : 'Reveal Coffee Identities';
+      renderSessionContent();
+    }
+
+    function updateLiveTotalScore() {
+      const attrs = [
+        'attr_fragrance', 'attr_flavor', 'attr_aftertaste', 'attr_acidity',
+        'attr_body', 'attr_balance', 'attr_uniformity', 'attr_clean_cup',
+        'attr_sweetness', 'attr_overall'
+      ];
+      let sum = 0;
+      for (const id of attrs) {
+        const val = parseFloat(document.getElementById(id).value) || 0;
+        sum += val;
+      }
+      const defect = parseFloat(document.getElementById('defect_deduction').value) || 0;
+      const total = sum - defect;
+      document.getElementById('live-total-score').textContent = total.toFixed(2);
+    }
+
+    async function loadSessionsList(selectIdToSelect = null) {
+      try {
+        const sessions = await apiRequest('/api/sessions');
+        const select = document.getElementById('active-session-select');
+        select.innerHTML = '<option value="">-- Choose a Cupping Session Table --</option>' +
+          sessions.map(s => `
+            <option value="${s.session_id}" ${selectIdToSelect && String(s.session_id) === String(selectIdToSelect) ? 'selected' : ''}>
+              Session #${s.session_id} - ${escapeHtml(s.session_date)} (${s.sample_count} samples) ${s.notes ? '- ' + escapeHtml(s.notes) : ''}
+            </option>
+          `).join('');
+
+        if (selectIdToSelect) {
+          await loadSessionDetails(selectIdToSelect);
+        } else if (sessions.length > 0 && !activeSessionId) {
+          select.value = sessions[0].session_id;
+          await loadSessionDetails(sessions[0].session_id);
+        }
+      } catch (err) {
+        console.error('Error loading sessions:', err);
+      }
+    }
+
+    async function loadRoastsForSamples() {
+      try {
+        roastsAvailable = await apiRequest('/api/roasts');
+        const select = document.getElementById('sample_roast_id');
+        select.innerHTML = '<option value="">-- Select Roast Batch --</option>' +
+          roastsAvailable.map(r => `
+            <option value="${r.roast_id}">
+              Roast #${r.roast_id}: ${escapeHtml(r.lot_code)} (${escapeHtml(r.farm_name)} - ${escapeHtml(r.roast_level)} - ${escapeHtml(r.roast_date)})
+            </option>
+          `).join('');
+      } catch (err) {
+        console.error('Error loading roasts:', err);
+      }
+    }
+
+    async function loadSessionDetails(sessionId) {
+      if (!sessionId) {
+        document.getElementById('session-workspace').style.display = 'none';
+        activeSessionId = null;
+        activeSessionData = null;
+        return;
+      }
+
+      activeSessionId = sessionId;
+      try {
+        activeSessionData = await apiRequest(`/api/sessions/${sessionId}`);
+        document.getElementById('session-workspace').style.display = 'block';
+        renderSessionContent();
+      } catch (err) {
+        showAlert('Failed to load session details: ' + err.message, 'danger');
+      }
+    }
+
+    function renderSessionContent() {
+      if (!activeSessionData) return;
+      const { session, summary, samples, scores } = activeSessionData;
+
+      // Meta banner
+      document.getElementById('session-title').textContent = `Cupping Table Session #${session.session_id}`;
+      document.getElementById('session-date-display').textContent = `Session Date: ${session.session_date} | Total Samples on Table: ${samples.length}`;
+      document.getElementById('session-notes-display').textContent = session.notes ? `Notes: "${session.notes}"` : 'No session notes provided.';
+
+      // Samples in score dropdown
+      const sampleSelect = document.getElementById('score_sample_id');
+      sampleSelect.innerHTML = '<option value="">-- Choose Sample --</option>' +
+        samples.map(s => {
+          const label = isBlindRevealed
+            ? `[${s.blind_code}] ${s.lot_code} (${s.farm_name} - ${s.roast_level})`
+            : `[${s.blind_code}] Blind Sample`;
+          return `<option value="${s.sample_id}">${escapeHtml(label)}</option>`;
+        }).join('');
+
+      // Session Summary Ranking table (sp_session_summary)
+      document.getElementById('summary-samples-count').textContent = `${summary.length} Ranked Samples`;
+      const summaryTbody = document.getElementById('session-summary-tbody');
+
+      if (!summary.length) {
+        summaryTbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No samples or scores in this session.</td></tr>';
+      } else {
+        summaryTbody.innerHTML = summary.map((row, idx) => {
+          const coffeeName = isBlindRevealed
+            ? `<strong>${escapeHtml(row.lot_code)}</strong>`
+            : `<span style="letter-spacing: 0.15em; color: var(--color-text-muted);">•••••• (Blind)</span>`;
+
+          const roastProfile = isBlindRevealed
+            ? `<span class="badge badge-process">${escapeHtml(row.roast_level || '—')}</span>`
+            : `<span style="color: var(--color-text-muted);">••••</span>`;
+
+          return `
+            <tr>
+              <td><strong>#${idx + 1}</strong></td>
+              <td><span class="badge badge-score" style="font-size:0.85rem;">${escapeHtml(row.blind_code)}</span></td>
+              <td>${coffeeName}</td>
+              <td>${roastProfile}</td>
+              <td>${row.sheets} sheet${row.sheets !== 1 ? 's' : ''}</td>
+              <td><strong style="color: var(--color-caramel); font-size:1.1rem;">${formatScore(row.avg_score)}</strong></td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // Detailed Score Sheets table
+      const scoresTbody = document.getElementById('session-scores-tbody');
+      if (!scores.length) {
+        scoresTbody.innerHTML = '<tr><td colspan="14" style="text-align: center;">No score sheets logged yet. Fill out the form above!</td></tr>';
+      } else {
+        scoresTbody.innerHTML = scores.map(sc => `
+          <tr>
+            <td><span class="badge badge-score">${escapeHtml(sc.blind_code)}</span></td>
+            <td><strong>${escapeHtml(sc.cupper_name)}</strong></td>
+            <td>${formatScore(sc.fragrance_aroma)}</td>
+            <td>${formatScore(sc.flavor)}</td>
+            <td>${formatScore(sc.aftertaste)}</td>
+            <td>${formatScore(sc.acidity)}</td>
+            <td>${formatScore(sc.body)}</td>
+            <td>${formatScore(sc.balance)}</td>
+            <td>${formatScore(sc.uniformity)}</td>
+            <td>${formatScore(sc.clean_cup)}</td>
+            <td>${formatScore(sc.sweetness)}</td>
+            <td>${formatScore(sc.overall)}</td>
+            <td style="color: ${sc.defect_deduction > 0 ? 'var(--color-danger)' : 'inherit'};">-${formatScore(sc.defect_deduction)}</td>
+            <td><strong style="color: var(--color-caramel);">${formatScore(sc.total_score)}</strong></td>
+          </tr>
+        `).join('');
+      }
+    }
+
+    async function handleCreateSession(e) {
+      e.preventDefault();
+      clearAlert();
+      const form = e.target;
+      const data = {
+        session_date: form.session_date.value,
+        notes: form.notes.value
+      };
+
+      try {
+        const res = await apiRequest('/api/sessions', {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+        showAlert(`Cupping session #${res.session_id} created successfully!`, 'success');
+        form.reset();
+        toggleCreateSessionForm();
+        await loadSessionsList(res.session_id);
+      } catch (err) {
+        showAlert(err.message, 'danger');
+      }
+    }
+
+    async function handleAddSample(e) {
+      e.preventDefault();
+      clearAlert();
+      if (!activeSessionId) return;
+
+      const form = e.target;
+      const data = {
+        roast_id: form.roast_id.value,
+        blind_code: form.blind_code.value
+      };
+
+      try {
+        await apiRequest(`/api/sessions/${activeSessionId}/samples`, {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+        showAlert(`Sample "${data.blind_code.toUpperCase()}" added to session table!`, 'success');
+        form.reset();
+        toggleAddSampleForm();
+        await loadSessionDetails(activeSessionId);
+      } catch (err) {
+        showAlert(err.message, 'danger');
+      }
+    }
+
+    async function handleSubmitScore(e) {
+      e.preventDefault();
+      clearAlert();
+      const form = e.target;
+      const sampleId = form.sample_id.value;
+      if (!sampleId) {
+        showAlert('Please select a sample to score.', 'danger');
+        return;
+      }
+
+      const data = {
+        cupper_name: form.cupper_name.value,
+        fragrance_aroma: form.fragrance_aroma.value,
+        flavor: form.flavor.value,
+        aftertaste: form.aftertaste.value,
+        acidity: form.acidity.value,
+        body: form.body.value,
+        balance: form.balance.value,
+        uniformity: form.uniformity.value,
+        clean_cup: form.clean_cup.value,
+        sweetness: form.sweetness.value,
+        overall: form.overall.value,
+        defect_deduction: form.defect_deduction.value
+      };
+
+      try {
+        const res = await apiRequest(`/api/samples/${sampleId}/scores`, {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+
+        showAlert(`Score sheet recorded for cupper "${data.cupper_name}"! Total Score: ${formatScore(res.score.total_score)}.`, 'success');
+        await loadSessionDetails(activeSessionId);
+      } catch (err) {
+        // Displays trigger error (blank cupper) or unique constraint (duplicate cupper score)
+        showAlert(err.message, 'danger');
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('session_date').value = new Date().toISOString().split('T')[0];
+      loadSessionsList();
+      loadRoastsForSamples();
+      updateLiveTotalScore();
+    });
+  </script>
+</body>
+</html>
