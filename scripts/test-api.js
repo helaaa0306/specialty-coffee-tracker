@@ -243,6 +243,54 @@ async function runTests() {
     const leaderboard = await request('GET', '/api/leaderboard');
     assert('GET /api/leaderboard (v_lot_leaderboard + process + cuppers)', leaderboard.status === 200 && Array.isArray(leaderboard.data.rankedLots));
 
+    // 8. SQL Console Tests (4 required checks)
+    console.log('\n--- Running SQL Console Feature Tests ---');
+
+    // Test 1: SELECT works
+    const consoleSelect = await request('POST', '/api/console/execute', {
+      sql: 'SELECT lot_code, farm_name, stock_remaining_kg FROM v_lot_stock LIMIT 5;',
+      allowWrites: false
+    });
+    assert(
+      'Console Test 1: SELECT query executes successfully',
+      consoleSelect.status === 200 && Array.isArray(consoleSelect.data.rows) && consoleSelect.data.columns.includes('lot_code'),
+      JSON.stringify(consoleSelect.data)
+    );
+
+    // Test 2: DROP TABLE rejected
+    const consoleDrop = await request('POST', '/api/console/execute', {
+      sql: 'DROP TABLE farm;',
+      allowWrites: true
+    });
+    assert(
+      'Console Test 2: DROP TABLE rejected with HTTP 400',
+      consoleDrop.status === 400 && /forbidden|drop/i.test(consoleDrop.data?.error?.message),
+      JSON.stringify(consoleDrop.data)
+    );
+
+    // Test 3: Two statements in one request rejected
+    const consoleMulti = await request('POST', '/api/console/execute', {
+      sql: 'SELECT 1; SELECT 2;',
+      allowWrites: false
+    });
+    assert(
+      'Console Test 3: Two statements in one request rejected with HTTP 400',
+      consoleMulti.status === 400 && /multiple statements|one sql statement/i.test(consoleMulti.data?.error?.message),
+      JSON.stringify(consoleMulti.data)
+    );
+
+    // Test 4: CALL sp_add_roast over-stock returns "Roast exceeds remaining green coffee stock for this lot"
+    const consoleOverStock = await request('POST', '/api/console/execute', {
+      sql: "CALL sp_add_roast(5, '2026-03-21', 'Light', 50.00, 42.00);",
+      allowWrites: true
+    });
+    assert(
+      'Console Test 4: CALL sp_add_roast over-stock returns trigger message',
+      consoleOverStock.status === 400 &&
+      /roast exceeds remaining green coffee stock for this lot/i.test(consoleOverStock.data?.error?.message),
+      consoleOverStock.data?.error?.message || JSON.stringify(consoleOverStock.data)
+    );
+
     console.log('\n====================================================');
     console.log(` Test Results: ${passed} Passed, ${failed} Failed`);
     console.log('====================================================\n');

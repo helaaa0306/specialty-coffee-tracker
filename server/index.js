@@ -34,6 +34,7 @@ try {
   const cuppingRouter = require('./routes/cupping');
   const leaderboardRouter = require('./routes/leaderboard');
   const statsRouter = require('./routes/stats');
+  const consoleRouter = require('./routes/console');
 
   app.use('/api/farms', farmsRouter);
   app.use('/api/lots', lotsRouter);
@@ -42,6 +43,7 @@ try {
   app.use('/api/samples', cuppingRouter.samplesRouter);
   app.use('/api/leaderboard', leaderboardRouter);
   app.use('/api/stats', statsRouter);
+  app.use('/api/console', consoleRouter);
 } catch (e) {
   // Routes may be mounted in subsequent step
 }
@@ -57,12 +59,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error', details: err.message });
 });
 
-// Start listening if run directly
+// Start listening if run directly (listen on localhost only for console demo security)
 if (require.main === module) {
-  app.listen(PORT, () => {
+  app.listen(PORT, 'localhost', () => {
     console.log(`====================================================`);
     console.log(` Specialty Coffee Cupping & Bean Tracker Server`);
-    console.log(` Running on: http://localhost:${PORT}`);
+    console.log(` Running on: http://localhost:${PORT} (Localhost Only)`);
     console.log(` Static files served from /public`);
     console.log(`====================================================`);
   });

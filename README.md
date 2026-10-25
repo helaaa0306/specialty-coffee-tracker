@@ -104,6 +104,9 @@ All API responses are in JSON format. Input validation is performed on both the 
 | `POST` | `/api/samples/:id/scores` | Record a 10-attribute cupper score sheet | `{ cupper_name, fragrance_aroma, flavor, aftertaste, acidity, body, balance, uniformity, clean_cup, sweetness, overall, defect_deduction }` |
 | `GET` | `/api/leaderboard` | View `v_lot_leaderboard` + avg score by process + cupper stats | None |
 | `GET` | `/api/stats` | Roastery counts (lots, stock kg, roasts, avg score) | None |
+| `GET` | `/api/console/meta` | Schema tables, views, procedures, triggers, and sample queries | None |
+| `POST` | `/api/console/execute` | Execute single SQL statement with read/write safety | `{ sql, allowWrites }` |
+| `POST` | `/api/console/reset` | Re-run database setup scripts to reset sample data | `{ allowWrites: true }` |
 
 ---
 
@@ -148,13 +151,35 @@ The application strictly leverages the database logic defined in `03_programming
 
 ---
 
-## 6. How to Test the Database Rules
+## 6. Interactive SQL Console
+
+The application includes an integrated **SQL Console** (`public/console.html`) for interactive queries, course demonstration, and debugging.
+
+> [!WARNING]
+> **SECURITY NOTICE**: The SQL Console is designed strictly for **local development and DBMS course demonstration**. The server binds exclusively to `localhost`. This console **must never be deployed to a public or production environment**.
+
+### Key Features:
+- **Terminal Aesthetics & Mechanics**: Dark espresso terminal (`mysql> ` prompt), continuation lines (`    -> `), and monospace ASCII table rendering.
+- **Client Ergonomics**: Command execution on `;` + `Enter`, multiline entry with `Shift+Enter`, Up/Down arrow command history cycling (persisted in `localStorage`, last 50 queries), and `Ctrl+L` clear screen.
+- **Built-in Commands**: `help`, `clear`, `tables`, `views`, `procedures`, `triggers`, `describe <table>`, and `sample <table>` (first 10 rows).
+- **Interactive Sidebar**: Tables and views explorer (click to describe), and all Phase II & Phase III queries grouped into **Joins**, **Aggregates**, **Subqueries**, and **Programming** (click loads query into the editor).
+- **Execution Safety**:
+  - Exactly **one statement per request** (comments stripped, multiple statements rejected).
+  - **Read-Only Mode** (default): restricts queries to `SELECT`, `SHOW`, `DESCRIBE`, `DESC`, `EXPLAIN`, and `WITH`.
+  - **Write Mode**: toggleable switch enabling `INSERT`, `UPDATE`, `DELETE`, and `CALL`.
+  - **Hard Rejections**: `DROP`, `TRUNCATE`, `ALTER`, `CREATE`, `GRANT`, `REVOKE`, `RENAME`, `USE`, `SET`, `LOAD`, `INTO OUTFILE`, `INTO DUMPFILE`, `LOAD_FILE` are permanently rejected with HTTP 400.
+  - **Result Limits & Timeout**: Responses are capped at 500 rows with a 10-second query timeout.
+  - **Sample Data Reset**: Re-executes the database migration scripts to restore initial sample data upon confirmation.
+
+---
+
+## 7. How to Test the Database & Console Rules
 
 The application traps all database-level errors (triggers, CHECK constraints, and unique keys) and translates them into clean HTTP 400 responses displayed in visible in-page alert banners.
 
-Here are 4 concrete verification tests:
+### Core Database Rule Tests:
 
-### Test 1: Over-Stock Roast (Trigger `trg_roast_stock_check`)
+#### Test 1: Over-Stock Roast (Trigger `trg_roast_stock_check`)
 - **Action**: On the **Roast Log** page (`roasts.html`), select lot `ET-KO-2526-01` (Lot ID 5), which only has 3.00 kg remaining. Enter `5.00` kg for Green Coffee Input and `4.30` kg for Roasted Coffee. Click **Submit Roast**.
 - **Database Trigger**: `trg_roast_stock_check` fires and detects `5.00 > fn_lot_stock(5)`.
 - **Expected Error Banner**:
@@ -162,7 +187,7 @@ Here are 4 concrete verification tests:
   Roast exceeds remaining green coffee stock for this lot
   ```
 
-### Test 2: Roasted Weight Greater Than Green (CHECK `chk_roast_roasted`)
+#### Test 2: Roasted Weight Greater Than Green (CHECK `chk_roast_roasted`)
 - **Action**: On the **Roast Log** page (`roasts.html`), select lot `IN-BB-2526-01` (Lot ID 1). Enter `10.00` kg for Green Coffee and `12.00` kg for Roasted Coffee. Click **Submit Roast**.
 - **Database Constraint**: `CONSTRAINT chk_roast_roasted CHECK (roasted_kg > 0 AND roasted_kg <= green_kg)` is violated.
 - **Expected Error Banner**:
@@ -170,7 +195,7 @@ Here are 4 concrete verification tests:
   Roasted weight must be less than or equal to green coffee weight.
   ```
 
-### Test 3: Duplicate Cupper Score on Same Sample (UNIQUE `uq_sample_cupper`)
+#### Test 3: Duplicate Cupper Score on Same Sample (UNIQUE `uq_sample_cupper`)
 - **Action**: On the **Cupping** page (`cupping.html`), open Session 1. Select Sample `A1` and enter cupper name `Aarav` (who has already evaluated Sample A1 in seed data). Submit the score sheet.
 - **Database Constraint**: `CONSTRAINT uq_sample_cupper UNIQUE (sample_id, cupper_name)` is violated.
 - **Expected Error Banner**:
@@ -178,7 +203,7 @@ Here are 4 concrete verification tests:
   This cupper has already submitted a score sheet for this sample.
   ```
 
-### Test 4: Blank Cupper Name (Trigger `trg_score_cupper_name`)
+#### Test 4: Blank Cupper Name (Trigger `trg_score_cupper_name`)
 - **Action**: On the **Cupping** page (`cupping.html`), open any session, pick a sample, and enter only blank spaces `"   "` in the Cupper Name field. Click **Submit Cupping Score Sheet**.
 - **Database Trigger**: `trg_score_cupper_name` fires `IF TRIM(NEW.cupper_name) = '' THEN SIGNAL SQLSTATE '45000'`.
 - **Expected Error Banner**:
@@ -186,9 +211,26 @@ Here are 4 concrete verification tests:
   Cupper name cannot be blank.
   ```
 
+### SQL Console Feature Tests:
+
+Execute the automated test suite with `npm test`:
+
+1. **SELECT Query Execution**:
+   - Query: `SELECT lot_code, farm_name, stock_remaining_kg FROM v_lot_stock LIMIT 5;` (read-only mode).
+   - Expected Result: HTTP 200 with ASCII tabular formatting, columns, and row data.
+2. **DROP TABLE Rejection**:
+   - Query: `DROP TABLE farm;` (with writes enabled).
+   - Expected Result: HTTP 400 rejection: `ERROR 400 (42000): Operation 'DROP' is forbidden in the SQL Console.`
+3. **Multiple Statements Rejection**:
+   - Query: `SELECT 1; SELECT 2;`
+   - Expected Result: HTTP 400 rejection: `ERROR 400 (42000): Only one SQL statement is permitted per request (multiple statements rejected).`
+4. **Trigger Signal via Stored Procedure in Console**:
+   - Query: `CALL sp_add_roast(5, '2026-03-21', 'Light', 50.00, 42.00);` (with writes enabled).
+   - Expected Result: HTTP 400 with raw MySQL error: `ERROR 1644 (45000): Roast exceeds remaining green coffee stock for this lot`.
+
 ---
 
-## 7. Git & GitHub Setup
+## 8. Git & GitHub Setup
 
 To connect this local repository to your remote GitHub repository:
 
